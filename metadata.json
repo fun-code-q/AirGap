@@ -1,0 +1,7 @@
+{
+  "name": "AirGap",
+  "description": "Secure, offline file transfer using animated QR codes. No WiFi or Bluetooth required.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
