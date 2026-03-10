@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface MiniScannerProps {
     onScan: (data: string) => void;
@@ -24,26 +24,7 @@ export const MiniScanner: React.FC<MiniScannerProps> = ({ onScan, enabled = true
         return () => workerRef.current?.terminate();
     }, [onScan]);
 
-    useEffect(() => {
-        if (!enabled) return;
-        let stream: MediaStream | null = null;
-        const startCamera = async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: videoFacingMode, width: { ideal: 640 }, height: { ideal: 480 } }
-                });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    await videoRef.current.play();
-                    requestAnimationFrame(tick);
-                }
-            } catch (err) { console.error("MiniScanner camera error", err); }
-        };
-        startCamera();
-        return () => { if (stream) stream.getTracks().forEach(track => track.stop()); };
-    }, [enabled, videoFacingMode]);
-
-    const tick = () => {
+    const tick = useCallback(() => {
         const video = videoRef.current;
         if (!video || !enabled) return;
         if (video.readyState === video.HAVE_ENOUGH_DATA && !isProcessingRef.current) {
@@ -61,7 +42,27 @@ export const MiniScanner: React.FC<MiniScannerProps> = ({ onScan, enabled = true
             }
         }
         requestAnimationFrame(tick);
-    };
+    }, [enabled, onScan]);
+
+    useEffect(() => {
+        if (!enabled) return;
+        let stream: MediaStream | null = null;
+        const startCamera = async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: videoFacingMode, width: { ideal: 640 }, height: { ideal: 480 } }
+                });
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
+                    requestAnimationFrame(tick);
+                }
+            } catch (err) { console.error("MiniScanner camera error", err); }
+        };
+        startCamera();
+        return () => { if (stream) stream.getTracks().forEach(track => track.stop()); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabled, videoFacingMode, tick]);
 
     return (
         <div className="relative w-full h-full bg-black rounded-xl overflow-hidden border border-white/10 shadow-2xl">

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Cpu, Zap, Maximize } from 'lucide-react';
 
 interface ScannerCanvasProps {
@@ -31,6 +31,29 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     return () => { workerRef.current?.terminate(); };
   }, [onScan]);
 
+  const tick = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !isActive) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA && !isProcessingRef.current) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const PROC_WIDTH = 800;
+        const scale = PROC_WIDTH / video.videoWidth;
+        const h = Math.floor(video.videoHeight * scale);
+        canvas.width = PROC_WIDTH;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, PROC_WIDTH, h);
+          const imageData = ctx.getImageData(0, 0, PROC_WIDTH, h);
+          isProcessingRef.current = true;
+          workerRef.current?.postMessage({ imageData, width: PROC_WIDTH, height: h, requestId: Date.now() }, [imageData.data.buffer]);
+        }
+      }
+    }
+    requestAnimationFrame(tick);
+  }, [isActive, onScan]);
+
   useEffect(() => {
     if (!isActive) return;
     let stream: MediaStream | null = null;
@@ -52,30 +75,8 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     };
     startCamera();
     return () => { isMounted = false; if (stream) stream.getTracks().forEach(track => track.stop()); };
-  }, [isActive, onError]);
-
-  const tick = () => {
-    const video = videoRef.current;
-    if (!video || !isActive) return;
-    if (video.readyState === video.HAVE_ENOUGH_DATA && !isProcessingRef.current) {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const PROC_WIDTH = 800;
-        const scale = PROC_WIDTH / video.videoWidth;
-        const h = Math.floor(video.videoHeight * scale);
-        canvas.width = PROC_WIDTH;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, PROC_WIDTH, h);
-          const imageData = ctx.getImageData(0, 0, PROC_WIDTH, h);
-          isProcessingRef.current = true;
-          workerRef.current?.postMessage({ imageData, width: PROC_WIDTH, height: h, requestId: Date.now() }, [imageData.data.buffer]);
-        }
-      }
-    }
-    requestAnimationFrame(tick);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, onError, tick]);
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">

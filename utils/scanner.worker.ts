@@ -6,7 +6,7 @@ let barcodeDetector: any = null;
 // Initialize Native BarcodeDetector if available
 if ('BarcodeDetector' in self) {
     try {
-        // @ts-ignore
+        // @ts-expect-error - BarcodeDetector is a draft API not yet in common TypeScript types
         barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
     } catch (e) {
         console.warn("Native BarcodeDetector initialization failed, falling back to WASM");

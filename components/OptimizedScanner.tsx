@@ -20,8 +20,7 @@ export interface ScannerOptions {
     videoFacingMode?: 'user' | 'environment';
 }
 
-interface BarcodeDetectorType {
-    new(options?: { formats: string[] }): BarcodeDetectorType;
+interface BarcodeDetectorInstance {
     detect(image: ImageBitmapSource): Promise<Array<{
         rawValue: string;
         format: string;
@@ -29,13 +28,16 @@ interface BarcodeDetectorType {
     }>>;
 }
 
+interface BarcodeDetectorConstructor {
+    new(options?: { formats: string[] }): BarcodeDetectorInstance;
+}
+
 // Check for BarcodeDetector support
 const hasBarcodeDetector = 'BarcodeDetector' in window;
-let BarcodeDetector: BarcodeDetectorType | null = null;
+let BarcodeDetector: BarcodeDetectorConstructor | null = null;
 
 if (hasBarcodeDetector) {
-    // @ts-expect-error - BarcodeDetector is not in TypeScript types yet
-    BarcodeDetector = window.BarcodeDetector as BarcodeDetectorType;
+    BarcodeDetector = (window as unknown as { BarcodeDetector: BarcodeDetectorConstructor }).BarcodeDetector;
 }
 
 export function useOptimizedScanner(options: ScannerOptions) {
@@ -49,7 +51,7 @@ export function useOptimizedScanner(options: ScannerOptions) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const detectorRef = useRef<BarcodeDetectorType | null>(null);
+    const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
     const animationFrameRef = useRef<number>(0);
     const lastScanRef = useRef<string | null>(null);
     const lastScanTimeRef = useRef<number>(0);
@@ -80,8 +82,7 @@ export function useOptimizedScanner(options: ScannerOptions) {
 
             // Initialize BarcodeDetector if available
             if (supportsNativeDetector) {
-                // @ts-expect-error - BarcodeDetector is native API
-                detectorRef.current = new window.BarcodeDetector({
+                detectorRef.current = new (window as any).BarcodeDetector({
                     formats: ['qr_code'],
                 });
             }

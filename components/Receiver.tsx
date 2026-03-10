@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ArrowLeft, CheckCircle, Download, FileAudio, FileImage, FileText, AlertCircle, Trash2, FileVideo, FileCode, QrCode, Copy, Check, FileSpreadsheet, FileBox, Eye, Code as CodeIcon, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import ScannerCanvas from './ScannerCanvas';
 import { parseQRData, reconstructFile } from '../utils/protocol';
 import { TransferState } from '../types';
-// @ts-ignore
 import * as mammoth from 'mammoth';
-// @ts-ignore
 import * as pdfjsLibProxy from 'pdfjs-dist';
 
 const pdfjsLib = (pdfjsLibProxy as any).default || pdfjsLibProxy;
@@ -39,7 +37,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     resultUrl: null,
   });
 
-  const handleScan = (rawData: string) => {
+  const handleScan = useCallback((rawData: string) => {
     if (transfer.isComplete) return;
     const packet = parseQRData(rawData);
     if (packet.type === 'UNKNOWN') return;
@@ -91,7 +89,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
       }
       return nextState;
     });
-  };
+  }, [transfer.isComplete, transfer.resultUrl]);
 
   const resetTransfer = () => {
     if (transfer.resultUrl) URL.revokeObjectURL(transfer.resultUrl);

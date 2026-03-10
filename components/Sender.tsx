@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, File as FileIcon, Play, Pause, Upload, Type, Settings, X, ChevronLeft, ChevronRight, Sun, Layers } from 'lucide-react';
 import { processFile, generateQRData, generateUUID } from '../utils/protocol';
 import QRDisplay from './QRDisplay';
@@ -56,11 +56,11 @@ const Sender: React.FC<SenderProps> = ({ onBack }) => {
     startProcessing(file);
   };
 
-  const getStep = () => {
+  const getStep = useCallback(() => {
     if (mode === 'DUAL') return 2;
     if (mode === 'COLOR') return 3;
     return 1;
-  };
+  }, [mode]);
 
   const handlePrevFrame = () => {
     setIsPlaying(false);
@@ -84,7 +84,8 @@ const Sender: React.FC<SenderProps> = ({ onBack }) => {
       }, 1000 / fps);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, fps, qrFrames.length, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, fps, qrFrames.length, mode, getStep]);
 
   const frame1 = qrFrames[currentFrameIndex];
   const frame2 = (currentFrameIndex + 1 < qrFrames.length) ? qrFrames[currentFrameIndex + 1] : null;
