@@ -7,7 +7,7 @@ import path from 'path'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
-  base: './',
+  base: '/AirGap/',
   plugins: [
     react(),
     VitePWA({
@@ -31,8 +31,8 @@ export default defineConfig({
         background_color: '#020617',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
-        scope: '/',
+        start_url: '/AirGap/',
+        scope: '/AirGap/',
         categories: ['productivity', 'utilities', 'security'],
         icons: [
           { src: 'pwa-64x64.png',            sizes: '64x64',   type: 'image/png' },
@@ -45,7 +45,7 @@ export default defineConfig({
         // Let the OS hand files directly to AirGap as "Open with…"
         file_handlers: [
           {
-            action: '/',
+            action: '/AirGap/',
             accept: {
               'application/pdf': ['.pdf'],
               'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
@@ -58,7 +58,7 @@ export default defineConfig({
         ],
         // Accept Web-Share-Target posts: "Share to AirGap" from any app
         share_target: {
-          action: '/',
+          action: '/AirGap/',
           method: 'POST',
           enctype: 'multipart/form-data',
           params: {
@@ -78,13 +78,13 @@ export default defineConfig({
             name: 'Send',
             short_name: 'Send',
             description: 'Broadcast a file via QR',
-            url: '/?mode=send',
+            url: '/AirGap/?mode=send',
           },
           {
             name: 'Receive',
             short_name: 'Receive',
             description: 'Scan inbound QR stream',
-            url: '/?mode=receive',
+            url: '/AirGap/?mode=receive',
           },
         ],
       },

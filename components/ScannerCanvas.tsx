@@ -132,6 +132,12 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
 
         onError(null);
         setDebugInfo('CAMERA: REQUESTING...');
+        console.info('[AirGap] requesting camera', {
+          secureContext: window.isSecureContext,
+          origin: window.location.origin,
+          href: window.location.href,
+          userAgent: navigator.userAgent,
+        });
         stopCamera();
 
         const candidateConstraints: MediaTrackConstraints[] = [
@@ -182,7 +188,18 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
           await videoEl.play();
           if (!isCancelled) {
             setNeedsTapToStart(false);
-            setDebugInfo('STREAM: STARTED');
+            const track = stream.getVideoTracks()[0];
+            const settings = track?.getSettings();
+            console.info('[AirGap] camera started', {
+              label: track?.label,
+              readyState: track?.readyState,
+              muted: track?.muted,
+              enabled: track?.enabled,
+              settings,
+              videoReadyState: videoEl.readyState,
+              videoSize: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
+            });
+            setDebugInfo(`STREAM: ${settings?.width || '?'}x${settings?.height || '?'}`);
             rafRef.current = requestAnimationFrame(tick);
           }
         } catch (playError) {
