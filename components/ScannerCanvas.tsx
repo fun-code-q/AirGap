@@ -38,6 +38,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const isProcessingRef = useRef(false);
+  const [needsTapToStart, setNeedsTapToStart] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
 
   const stopCamera = useCallback(() => {
@@ -170,15 +171,27 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
           return;
         }
 
+        const videoEl = videoRef.current;
         videoRef.current.srcObject = stream;
-        videoRef.current.muted = true;
-        videoRef.current.autoplay = true;
-        videoRef.current.setAttribute('playsinline', 'true');
-        await videoRef.current.play();
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', 'true');
 
-        if (!isCancelled) {
-          setDebugInfo('STREAM: STARTED');
-          rafRef.current = requestAnimationFrame(tick);
+        try {
+          await videoEl.play();
+          if (!isCancelled) {
+            setNeedsTapToStart(false);
+            setDebugInfo('STREAM: STARTED');
+            rafRef.current = requestAnimationFrame(tick);
+          }
+        } catch (playError) {
+          if (!isCancelled) {
+            setNeedsTapToStart(true);
+            onError('Camera opened, but preview is paused. Tap "Start camera".');
+            setDebugInfo('CAMERA: TAP TO START');
+            console.error('Video play() failed:', playError);
+          }
         }
       } catch (error) {
         if (!isCancelled) {
@@ -193,13 +206,42 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     return () => {
       isCancelled = true;
       stopCamera();
+      setNeedsTapToStart(false);
     };
   }, [isActive, onError, stopCamera, tick]);
+
+  const handleManualStart = async () => {
+    if (!videoRef.current) return;
+    try {
+      await videoRef.current.play();
+      onError(null);
+      setNeedsTapToStart(false);
+      setDebugInfo('STREAM: STARTED');
+      if (rafRef.current === null) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    } catch (error) {
+      onError(describeCameraError(error));
+      setDebugInfo('CAMERA: ERROR');
+    }
+  };
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">
       <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover scale-105" muted playsInline autoPlay />
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" />
+
+      {needsTapToStart && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
+          <button
+            type="button"
+            onClick={handleManualStart}
+            className="px-5 py-3 rounded-xl bg-cyan-500/85 hover:bg-cyan-400 text-slate-950 font-black tracking-wide uppercase border border-cyan-200/30 shadow-[0_10px_40px_rgba(6,182,212,0.35)]"
+          >
+            Start Camera
+          </button>
+        </div>
+      )}
 
       <div className="absolute inset-0 z-10 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.6)_100%)]" />
