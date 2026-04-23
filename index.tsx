@@ -5,9 +5,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
+import PWAUpdatePrompt from './components/PWAUpdatePrompt';
+import { ToastProvider } from './components/Toast';
 import './index.css';
 
-// Global error handler
+// Air-gapped: no remote logging. Surface unhandled errors loudly in the console.
 window.onerror = (message, source, lineno, colno, error) => {
   console.error('Global error:', { message, source, lineno, colno, error });
 };
@@ -26,6 +29,11 @@ const root = createRoot(rootElement);
 
 root.render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <ToastProvider>
+        <App />
+        <PWAUpdatePrompt />
+      </ToastProvider>
+    </ErrorBoundary>
   </StrictMode>
 );

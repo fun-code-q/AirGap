@@ -3,11 +3,58 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="AirGap - Secure offline file transfer via QR codes" />
-  <title>AirGap v2.0</title>
+
+  <!--
+    Content-Security-Policy.
+    Keep this in sync with the server-side CSP header (see DEPLOY.md).
+    Meta-tag CSPs don't support `frame-ancestors`, `report-uri`, or `sandbox` —
+    those MUST be set as HTTP headers at the edge.
+
+    Notes on each directive:
+      default-src 'self'            — baseline: only our own origin
+      script-src  'self' 'wasm-unsafe-eval'
+                                    — 'wasm-unsafe-eval' is required by zxing-wasm
+      style-src   'self' 'unsafe-inline' https://fonts.googleapis.com
+                                    — Tailwind injects runtime styles; the fonts
+                                      stylesheet is remote
+      font-src    'self' https://fonts.gstatic.com data:
+                                    — Google Fonts delivers woff2 from gstatic
+      img-src     'self' data: blob:
+                                    — blob: is the download preview path
+      media-src   'self' blob:      — audio/video previews of received files
+      worker-src  'self' blob:      — Web Workers (scanner + pdf.js)
+      connect-src 'self'            — strict — no remote fetches in runtime
+      object-src  'none'
+      base-uri    'self'
+      form-action 'self'            — the share_target POST lands on our origin
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'wasm-unsafe-eval';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' https://fonts.gstatic.com data:;
+    img-src 'self' data: blob:;
+    media-src 'self' blob:;
+    worker-src 'self' blob:;
+    connect-src 'self';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+  " />
+
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#020617" />
+  <meta name="description" content="AirGap — Secure offline file transfer via animated QR codes. No cloud, no cables, no network." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AirGap" />
+  <title>AirGap v2 — Offline QR File Transfer</title>
 </head>
 
 <body class="bg-slate-950">

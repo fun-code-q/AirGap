@@ -19,6 +19,15 @@ dist
 dist-ssr
 *.local
 
+# Stale working files committed in earlier passes — should not be tracked
+temp_install/
+lint_errors.json
+lint_output.txt
+test_output.txt
+
+# PWA generated assets
+dev-dist/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
