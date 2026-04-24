@@ -200,6 +200,22 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
               videoSize: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
             });
             setDebugInfo(`STREAM: ${settings?.width || '?'}x${settings?.height || '?'}`);
+            // Log the video element's layout box so we can tell if the element
+            // is actually on screen with non-zero size, or hidden/clipped.
+            requestAnimationFrame(() => {
+              if (videoRef.current) {
+                const rect = videoRef.current.getBoundingClientRect();
+                const computed = getComputedStyle(videoRef.current);
+                console.info('[AirGap] video element layout', {
+                  rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+                  computedDisplay: computed.display,
+                  computedVisibility: computed.visibility,
+                  computedOpacity: computed.opacity,
+                  computedTransform: computed.transform,
+                  computedZIndex: computed.zIndex,
+                });
+              }
+            });
             rafRef.current = requestAnimationFrame(tick);
           }
         } catch (playError) {
@@ -245,7 +261,14 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">
-      <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover scale-105" muted playsInline autoPlay />
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-cover scale-105"
+        style={{ backgroundColor: 'red' }}
+        muted
+        playsInline
+        autoPlay
+      />
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" />
 
       {needsTapToStart && (

@@ -11,6 +11,8 @@ import { ToastProvider } from './components/Toast';
 import './index.css';
 
 // Air-gapped: no remote logging. Surface unhandled errors loudly in the console.
+console.info('[AirGap] application initializing');
+
 window.onerror = (message, source, lineno, colno, error) => {
   console.error('Global error:', { message, source, lineno, colno, error });
 };
