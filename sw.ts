@@ -34,8 +34,8 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Only intercept POSTs to our origin root (matches share_target.action: '/')
-  if (request.method !== 'POST' || url.pathname !== '/') return;
+  // Only intercept POSTs to our origin root (matches share_target.action: '/AirGap/')
+  if (request.method !== 'POST' || url.pathname !== '/AirGap/') return;
 
   event.respondWith(handleShareTarget(event));
 });
@@ -87,10 +87,10 @@ async function handleShareTarget(event: FetchEvent): Promise<Response> {
     // Opportunistically GC older shares so the cache doesn't grow unbounded
     void gcShareCache(cache, nonce);
 
-    return Response.redirect(`/?shared=${nonce}`, 303);
+    return Response.redirect(`/AirGap/?shared=${nonce}`, 303);
   } catch (err) {
     console.error('[sw] share target failed', err);
-    return Response.redirect('/?shared=error', 303);
+    return Response.redirect('/AirGap/?shared=error', 303);
   }
 }
 
