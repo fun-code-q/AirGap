@@ -49,7 +49,13 @@ const PWAUpdatePrompt: React.FC = () => {
             <span className="text-[10px] text-slate-500 uppercase tracking-widest">Reload to update</span>
           </div>
           <button
-            onClick={() => updateSW?.(true)}
+            onClick={async () => {
+              if (updateSW) {
+                await updateSW(true);
+              } else {
+                window.location.reload();
+              }
+            }}
             className="ml-2 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[10px] font-black tracking-widest uppercase transition-colors"
           >
             Reload
