@@ -1,4 +1,4 @@
-import base45 from 'base45';
+import base45 from './base45';
 import { FountainDroplet, FileHeader, SealPacket } from '../types';
 import { crc32 } from './protocol';
 import { EncryptionKey } from './crypto';

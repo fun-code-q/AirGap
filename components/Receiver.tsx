@@ -4,7 +4,7 @@ import ScannerCanvas from './ScannerCanvas';
 import { parseQRData, reconstructFile, verifyChunkChecksum, verifyPayloadChecksum, crc32 } from '../utils/protocol';
 import { FountainDecoder } from '../utils/fountain';
 import { TransferState } from '../types';
-import base45 from 'base45';
+import base45 from '../utils/base45';
 import { importEncryptionKey, decryptData } from '../utils/crypto';
 import * as fflate from 'fflate';
 import DOMPurify from 'dompurify';

@@ -41,6 +41,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
   const colorModeRef = useRef(colorMode);
   const [needsTapToStart, setNeedsTapToStart] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
+  const [isPreviewReady, setIsPreviewReady] = useState(false);
 
   useEffect(() => {
     colorModeRef.current = colorMode;
@@ -61,6 +62,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    setIsPreviewReady(false);
   }, []);
 
   useEffect(() => {
@@ -244,6 +246,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
       onError(null);
       setNeedsTapToStart(false);
       setDebugInfo('STREAM: STARTED');
+      setIsPreviewReady(true);
       if (rafRef.current === null) {
         rafRef.current = requestAnimationFrame(tick);
       }
@@ -254,15 +257,23 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
   };
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden">
+    <div className="relative flex-1 min-h-[100dvh] w-full bg-black overflow-hidden">
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover scale-105"
+        className="absolute inset-0 z-0 block h-full w-full object-cover bg-black"
         muted
         playsInline
         autoPlay
+        onLoadedMetadata={() => setIsPreviewReady(true)}
+        onPlaying={() => setIsPreviewReady(true)}
       />
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" />
+      <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
+
+      {!isPreviewReady && !needsTapToStart && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
+          <span className="text-[10px] font-black tracking-widest text-slate-500 uppercase">Opening camera</span>
+        </div>
+      )}
 
       {needsTapToStart && (
         <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
@@ -277,7 +288,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
       )}
 
       <div className="absolute inset-0 z-10 pointer-events-none">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.6)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_52%,rgba(0,0,0,0.45)_100%)]" />
 
         <div className="absolute top-6 left-6 flex items-center space-x-3 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
           <Cpu className="w-3 h-3 text-cyan-400 animate-pulse" />

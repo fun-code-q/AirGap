@@ -8,7 +8,7 @@ import {
   FOUNTAIN_BLOCK_SIZE,
   computeDropletCount,
 } from '../utils/fountain';
-import base45 from 'base45';
+import base45 from '../utils/base45';
 import type { EncryptionKey } from '../utils/crypto';
 
 const fakeSeal = (): EncryptionKey => ({

@@ -8,7 +8,7 @@ import {
   verifyChunkChecksum,
   verifyPayloadChecksum,
 } from '../utils/protocol';
-import base45 from 'base45';
+import base45 from '../utils/base45';
 import type { EncryptionKey } from '../utils/crypto';
 
 // Fake seal object — real crypto.subtle is mocked in setup.ts and not needed

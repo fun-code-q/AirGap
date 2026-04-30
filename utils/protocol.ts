@@ -1,4 +1,4 @@
-import base45 from 'base45';
+import base45 from './base45';
 import * as fflate from 'fflate';
 import CRC32 from 'crc-32';
 import {
