@@ -38,14 +38,20 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const isProcessingRef = useRef(false);
+  const colorModeRef = useRef(colorMode);
   const [needsTapToStart, setNeedsTapToStart] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
+
+  useEffect(() => {
+    colorModeRef.current = colorMode;
+  }, [colorMode]);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    isProcessingRef.current = false;
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -64,6 +70,8 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
       const { results, error } = e.data;
       if (error) {
         console.error('Worker error:', error);
+        setDebugInfo('SCANNER: ERROR');
+        onError('QR scanner failed. Restart capture and try again.');
       } else if (results && results.length > 0) {
         results.forEach((data: string) => onScan(data));
         setDebugInfo(`STREAM: ACTIVE [${results.length} BLOCKS]`);
@@ -74,8 +82,9 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     return () => {
       workerRef.current?.terminate();
       workerRef.current = null;
+      isProcessingRef.current = false;
     };
-  }, [onScan]);
+  }, [onScan, onError]);
 
   const tick = useCallback(() => {
     const video = videoRef.current;
@@ -93,12 +102,13 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
         canvas.width = PROC_WIDTH;
         canvas.height = h;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
+        const worker = workerRef.current;
+        if (ctx && worker) {
           ctx.drawImage(video, 0, 0, PROC_WIDTH, h);
           const imageData = ctx.getImageData(0, 0, PROC_WIDTH, h);
           isProcessingRef.current = true;
-          workerRef.current?.postMessage(
-            { imageData, width: PROC_WIDTH, height: h, requestId: Date.now(), colorMode },
+          worker.postMessage(
+            { imageData, width: PROC_WIDTH, height: h, requestId: Date.now(), colorMode: colorModeRef.current },
             [imageData.data.buffer],
           );
         }
@@ -106,7 +116,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
     }
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [isActive, colorMode]);
+  }, [isActive]);
 
   useEffect(() => {
     if (!isActive) {
@@ -130,6 +140,7 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
           return;
         }
 
+        stopCamera();
         onError(null);
         setDebugInfo('CAMERA: REQUESTING...');
         console.info('[AirGap] requesting camera', {
@@ -138,7 +149,6 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
           href: window.location.href,
           userAgent: navigator.userAgent,
         });
-        stopCamera();
 
         const candidateConstraints: MediaTrackConstraints[] = [
           { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -200,22 +210,6 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
               videoSize: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
             });
             setDebugInfo(`STREAM: ${settings?.width || '?'}x${settings?.height || '?'}`);
-            // Log the video element's layout box so we can tell if the element
-            // is actually on screen with non-zero size, or hidden/clipped.
-            requestAnimationFrame(() => {
-              if (videoRef.current) {
-                const rect = videoRef.current.getBoundingClientRect();
-                const computed = getComputedStyle(videoRef.current);
-                console.info('[AirGap] video element layout', {
-                  rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
-                  computedDisplay: computed.display,
-                  computedVisibility: computed.visibility,
-                  computedOpacity: computed.opacity,
-                  computedTransform: computed.transform,
-                  computedZIndex: computed.zIndex,
-                });
-              }
-            });
             rafRef.current = requestAnimationFrame(tick);
           }
         } catch (playError) {
@@ -264,7 +258,6 @@ const ScannerCanvas: React.FC<ScannerCanvasProps> = ({ onScan, onError, isActive
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover scale-105"
-        style={{ backgroundColor: 'red' }}
         muted
         playsInline
         autoPlay

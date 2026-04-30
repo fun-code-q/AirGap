@@ -74,6 +74,13 @@ function idealSolitonCdf(k: number): Float64Array {
  * and receiver call this to agree on which source blocks a droplet covers.
  */
 export function indicesFromSeed(seed: number, k: number): number[] {
+  if (!Number.isFinite(seed) || !Number.isFinite(k) || k < 1) return [];
+  if (seed < 0) {
+    const systematicIndex = Math.trunc((-seed) - 1);
+    if (systematicIndex < 0 || systematicIndex >= k) return [];
+    return [systematicIndex];
+  }
+
   const rng = makeRng(seed);
   const cdf = idealSolitonCdf(k);
 
@@ -135,6 +142,35 @@ export function computeDropletCount(k: number, oversampleFactor = 1.25, floor = 
   return Math.max(floor, Math.ceil(k * oversampleFactor) + 16);
 }
 
+function seedForParityDroplet(idHash: number, n: number): number {
+  // Negative seeds are reserved for systematic single-block droplets.
+  return (idHash ^ ((n + 1) * 0x9E3779B1)) >>> 1;
+}
+
+function buildDroplet(
+  id: string,
+  seed: number,
+  k: number,
+  L: number,
+  blocks: Uint8Array[],
+): FountainDroplet {
+  const data = new Uint8Array(FOUNTAIN_BLOCK_SIZE);
+  for (const i of indicesFromSeed(seed, k)) {
+    const block = blocks[i];
+    if (block) xorInto(data, block);
+  }
+  const p = base45.encode(data);
+  return {
+    id,
+    s: seed,
+    k,
+    b: FOUNTAIN_BLOCK_SIZE,
+    L,
+    p,
+    c: crc32(p),
+  };
+}
+
 /**
  * Build a full set of QR frame strings for fountain-mode transmission:
  *   [SEAL, HEADER, F-droplet×N]
@@ -172,31 +208,20 @@ export function generateFountainFrames(
   };
   frames.push(`AGv2:H:${JSON.stringify(header)}`);
 
-  // Fountain droplets
-  const dropletCount = computeDropletCount(k);
   // Derive seeds deterministically from the UUID so reruns are reproducible during testing.
   // A cheap hash of the id, mixed with the droplet index:
   let idHash = 0;
   for (let i = 0; i < id.length; i++) idHash = (idHash * 31 + id.charCodeAt(i)) | 0;
 
+  const dropletCount = computeDropletCount(k);
+
+  // First emit a systematic layer: one degree-1 droplet for every source block.
+  // The display loops, so a receiver that eventually scans each unique
+  // systematic frame is guaranteed to finish. Extra parity droplets preserve
+  // the lossy benefits when the receiver catches them early.
   for (let n = 0; n < dropletCount; n++) {
-    const seed = (idHash ^ (n * 0x9E3779B1)) >>> 0;
-    const indices = indicesFromSeed(seed, k);
-    const data = new Uint8Array(FOUNTAIN_BLOCK_SIZE);
-    for (const i of indices) {
-      const block = blocks[i];
-      if (block) xorInto(data, block);
-    }
-    const p = base45.encode(data);
-    const droplet: FountainDroplet = {
-      id,
-      s: seed,
-      k,
-      b: FOUNTAIN_BLOCK_SIZE,
-      L,
-      p,
-      c: crc32(p),
-    };
+    const seed = n < k ? -(n + 1) : seedForParityDroplet(idHash, n - k);
+    const droplet = buildDroplet(id, seed, k, L, blocks);
     frames.push(`AGv2:F:${JSON.stringify(droplet)}`);
   }
 

@@ -1,12 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import {
   FountainDecoder,
+  generateFountainFrames,
   indicesFromSeed,
   splitIntoBlocks,
   makeRng,
   FOUNTAIN_BLOCK_SIZE,
   computeDropletCount,
 } from '../utils/fountain';
+import base45 from 'base45';
+import type { EncryptionKey } from '../utils/crypto';
+
+const fakeSeal = (): EncryptionKey => ({
+  key: {} as CryptoKey,
+  keyId: 'TEST',
+  iv: new Uint8Array(12),
+  exportedKey: 'TEST:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+});
 
 /**
  * Helper: encode `bytes` into droplets for K source blocks the same way the
@@ -107,6 +117,12 @@ describe('fountain: indicesFromSeed', () => {
       expect(indicesFromSeed(s, 1)).toEqual([0]);
     }
   });
+
+  it('negative seeds are reserved for systematic source blocks', () => {
+    expect(indicesFromSeed(-1, 10)).toEqual([0]);
+    expect(indicesFromSeed(-10, 10)).toEqual([9]);
+    expect(indicesFromSeed(-11, 10)).toEqual([]);
+  });
 });
 
 describe('fountain: splitIntoBlocks', () => {
@@ -164,6 +180,33 @@ describe('fountain: FountainDecoder (happy paths)', () => {
     const { ok, reassembled } = runDecode(bytes);
     expect(ok).toBe(true);
     expect(reassembled).toEqual(bytes);
+  });
+
+  it('generated frame sets are decodable after one complete sender loop', () => {
+    const bytes = randomBytes(FOUNTAIN_BLOCK_SIZE * 50 - 17);
+    const file = new File([new Uint8Array([1])], 'payload.bin');
+    const frames = generateFountainFrames(
+      '00000000-0000-4000-8000-000000000001',
+      file,
+      '',
+      0,
+      fakeSeal(),
+      bytes,
+    );
+    const droplets = frames
+      .filter((frame) => frame.startsWith('AGv2:F:'))
+      .map((frame) => JSON.parse(frame.slice('AGv2:F:'.length)));
+
+    expect(droplets.length).toBe(computeDropletCount(50));
+
+    const first = droplets[0]!;
+    const dec = new FountainDecoder(first.k, first.b, first.L);
+    for (const droplet of droplets) {
+      dec.addDroplet(droplet.s, Uint8Array.from(base45.decode(droplet.p)));
+    }
+
+    expect(dec.isComplete()).toBe(true);
+    expect(dec.reassemble()).toEqual(bytes);
   });
 });
 

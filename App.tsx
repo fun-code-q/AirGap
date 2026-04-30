@@ -108,7 +108,7 @@ function App() {
           <div className="w-full max-w-3xl mt-8 md:mt-12 px-4">
             <div className="flex flex-wrap justify-center gap-1.5 sm:gap-3">
               {[
-                { icon: Shield,  label: 'AES-256 E2E' },
+                { icon: Shield,  label: 'AES-GCM verified' },
                 { icon: WifiOff, label: 'Offline-first' },
                 { icon: Zap,     label: 'Fountain codes' },
               ].map(({ icon: Icon, label }) => (

@@ -7,6 +7,7 @@ import { TransferState } from '../types';
 import base45 from 'base45';
 import { importEncryptionKey, decryptData } from '../utils/crypto';
 import * as fflate from 'fflate';
+import DOMPurify from 'dompurify';
 
 // pdfjs + mammoth are large and only needed when the incoming file's MIME type
 // matches. Lazy-import them on demand so the main Receiver chunk doesn't pay
@@ -43,6 +44,12 @@ interface ReceiverProps {
   onBack: () => void;
 }
 
+const isPositiveInteger = (value: unknown): value is number =>
+  Number.isInteger(value) && typeof value === 'number' && value > 0;
+
+const isNonNegativeInteger = (value: unknown): value is number =>
+  Number.isInteger(value) && typeof value === 'number' && value >= 0;
+
 const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
@@ -74,6 +81,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
   // Fountain decoder lives outside React state because its internals are large
   // Uint8Arrays that we don't want to re-render on every droplet arrival.
   const fountainRef = useRef<FountainDecoder | null>(null);
+  const seenFountainSeedsRef = useRef<Set<number>>(new Set());
   const [fountainProgress, setFountainProgress] = useState({ known: 0, received: 0, k: 0 });
 
   const reassemble = useCallback(async (
@@ -114,11 +122,16 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     decoder: FountainDecoder,
     mimeType: string,
     sealMaterial: string,
+    headerChecksum: number,
   ) => {
     if (reassemblyInFlightRef.current) return;
     reassemblyInFlightRef.current = true;
     try {
       const sealedBytes = decoder.reassemble();
+
+      if (!verifyPayloadChecksum(base45.encode(sealedBytes), headerChecksum)) {
+        throw new Error('Fountain payload CRC32 mismatch - transmission corrupted');
+      }
 
       // Split GCM tag from the end (128 bits = 16 bytes)
       const TAG_LEN = 16;
@@ -147,16 +160,43 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
 
     // Reject corrupt DATA / FOUNTAIN frames at the door
     if (packet.type === 'DATA' && packet.chunk) {
-      if (!verifyChunkChecksum(packet.chunk.data, packet.chunk.crc)) {
+      const chunk = packet.chunk;
+      if (
+        !isNonNegativeInteger(chunk.index) ||
+        !isPositiveInteger(chunk.total) ||
+        chunk.index >= chunk.total ||
+        typeof chunk.data !== 'string' ||
+        !Number.isFinite(chunk.crc)
+      ) {
+        setTransfer(prev => ({ ...prev, corruptChunkCount: prev.corruptChunkCount + 1 }));
+        return;
+      }
+      if (!verifyChunkChecksum(chunk.data, chunk.crc)) {
         setTransfer(prev => ({ ...prev, corruptChunkCount: prev.corruptChunkCount + 1 }));
         return;
       }
     }
     if (packet.type === 'FOUNTAIN' && packet.droplet) {
-      if (crc32(packet.droplet.p) !== (packet.droplet.c >>> 0)) {
+      const droplet = packet.droplet;
+      if (
+        !Number.isFinite(droplet.s) ||
+        !isPositiveInteger(droplet.k) ||
+        !isPositiveInteger(droplet.b) ||
+        !isPositiveInteger(droplet.L) ||
+        typeof droplet.p !== 'string' ||
+        !Number.isFinite(droplet.c)
+      ) {
         setTransfer(prev => ({ ...prev, corruptChunkCount: prev.corruptChunkCount + 1 }));
         return;
       }
+      if (crc32(droplet.p) !== (droplet.c >>> 0)) {
+        setTransfer(prev => ({ ...prev, corruptChunkCount: prev.corruptChunkCount + 1 }));
+        return;
+      }
+    }
+
+    if (packet.type === 'FOUNTAIN' && packet.droplet && seenFountainSeedsRef.current.has(packet.droplet.s)) {
+      return;
     }
 
     setTransfer(prev => {
@@ -183,11 +223,31 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
       }
 
       if (packet.type === 'HEADER' && packet.header && !nextState.header) {
+        if (
+          !isPositiveInteger(packet.header.totalChunks) ||
+          !isNonNegativeInteger(packet.header.size) ||
+          !Number.isFinite(packet.header.checksum)
+        ) {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
+        if (fountainRef.current && packet.header.totalChunks !== fountainRef.current.k) {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
         nextState.header = packet.header;
         nextState.totalChunks = packet.header.totalChunks;
       }
 
       if (packet.type === 'DATA' && packet.chunk) {
+        const expectedTotal = nextState.header?.totalChunks ?? nextState.totalChunks;
+        if (
+          (expectedTotal !== null && expectedTotal !== packet.chunk.total) ||
+          packet.chunk.index >= packet.chunk.total
+        ) {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
         if (!nextState.receivedChunks.has(packet.chunk.index)) {
           if (nextState.totalChunks === null) nextState.totalChunks = packet.chunk.total;
           const newChunks = new Map(nextState.receivedChunks);
@@ -201,19 +261,55 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
 
       if (packet.type === 'FOUNTAIN' && packet.droplet) {
         const d = packet.droplet;
+        if (
+          d.b > 4096 ||
+          (nextState.header && nextState.header.totalChunks !== d.k) ||
+          (fountainRef.current && (
+            fountainRef.current.k !== d.k ||
+            fountainRef.current.blockSize !== d.b ||
+            fountainRef.current.L !== d.L
+          ))
+        ) {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
+
+        let bytes: Uint8Array;
+        try {
+          bytes = Uint8Array.from(base45.decode(d.p));
+        } catch {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
+        if (bytes.length !== d.b) {
+          nextState.corruptChunkCount += 1;
+          return nextState;
+        }
+
         if (!fountainRef.current) {
           fountainRef.current = new FountainDecoder(d.k, d.b, d.L);
         }
-        // Decode base45 payload into bytes
-        const bytes = Uint8Array.from(base45.decode(d.p));
+        seenFountainSeedsRef.current.add(d.s);
         fountainRef.current.addDroplet(d.s, bytes);
         const dec = fountainRef.current;
         nextState.progress = dec.progress;
         setFountainProgress({ known: dec.knownCount, received: dec.receivedDroplets, k: dec.k });
 
-        if (dec.isComplete() && nextState.header && nextState.sealMaterial && !nextState.resultUrl) {
-          void reassembleFountain(dec, nextState.header.mimeType, nextState.sealMaterial);
-        }
+      }
+
+      const fountainReady =
+        fountainRef.current?.isComplete() &&
+        nextState.header &&
+        nextState.sealMaterial &&
+        !nextState.resultUrl;
+
+      if (fountainReady && fountainRef.current && nextState.header && nextState.sealMaterial) {
+        void reassembleFountain(
+          fountainRef.current,
+          nextState.header.mimeType,
+          nextState.sealMaterial,
+          nextState.header.checksum,
+        );
       }
 
       // Sequential complete-check
@@ -243,6 +339,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     if (transfer.resultUrl) URL.revokeObjectURL(transfer.resultUrl);
     reassemblyInFlightRef.current = false;
     fountainRef.current = null;
+    seenFountainSeedsRef.current.clear();
     setFountainProgress({ known: 0, received: 0, k: 0 });
     setTransfer({
       transferId: null, header: null, totalChunks: null, receivedChunks: new Map(),
@@ -252,6 +349,12 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     setError(null); setPreviewText(null); setRenderedHtml(null); setCopyFeedback(false);
     setViewMode('PREVIEW'); setPdfDoc(null); setPdfPageNum(1); setPdfTotalPages(0);
   };
+
+  useEffect(() => {
+    return () => {
+      if (transfer.resultUrl) URL.revokeObjectURL(transfer.resultUrl);
+    };
+  }, [transfer.resultUrl]);
 
   const handleCopyCode = () => {
     if (previewText) {
@@ -319,7 +422,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
           const [mammoth, res] = await Promise.all([loadMammoth(), fetch(transfer.resultUrl!)]);
           const buffer = await res.arrayBuffer();
           const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-          setRenderedHtml(result.value);
+          setRenderedHtml(DOMPurify.sanitize(result.value));
         } catch (err) {
           console.error('Docx conversion failed', err);
           setError('Could not render document.');

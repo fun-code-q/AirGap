@@ -26,7 +26,7 @@ export default defineConfig({
         name: 'AirGap — Offline QR Transfer',
         short_name: 'AirGap',
         description:
-          'Secure offline file transfer via animated QR codes. No cloud, no cables, no network.',
+          'Offline file transfer via animated QR codes. No cloud, no cables, no network.',
         theme_color: '#020617',
         background_color: '#020617',
         display: 'standalone',

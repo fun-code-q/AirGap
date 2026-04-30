@@ -14,11 +14,9 @@
       default-src 'self'            — baseline: only our own origin
       script-src  'self' 'wasm-unsafe-eval'
                                     — 'wasm-unsafe-eval' is required by zxing-wasm
-      style-src   'self' 'unsafe-inline' https://fonts.googleapis.com
-                                    — Tailwind injects runtime styles; the fonts
-                                      stylesheet is remote
-      font-src    'self' https://fonts.gstatic.com data:
-                                    — Google Fonts delivers woff2 from gstatic
+      style-src   'self' 'unsafe-inline'
+                                    — Tailwind injects runtime styles
+      font-src    'self' data:
       img-src     'self' data: blob:
                                     — blob: is the download preview path
       media-src   'self' blob:      — audio/video previews of received files
@@ -31,8 +29,8 @@
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
     script-src 'self' 'wasm-unsafe-eval';
-    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-    font-src 'self' https://fonts.gstatic.com data:;
+    style-src 'self' 'unsafe-inline';
+    font-src 'self' data:;
     img-src 'self' data: blob:;
     media-src 'self' blob:;
     worker-src 'self' blob:;
@@ -49,7 +47,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#020617" />
-  <meta name="description" content="AirGap — Secure offline file transfer via animated QR codes. No cloud, no cables, no network." />
+  <meta name="description" content="AirGap — Offline file transfer via animated QR codes. No cloud, no cables, no network." />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

@@ -81,6 +81,17 @@ async function drainSharedNonce(nonce: string): Promise<void> {
     if (matching.length === 0) return;
 
     // Separate meta from files
+    const metaReq = matching.find((r) => new URL(r.url).pathname.endsWith('/__meta__.json'));
+    let meta: { title?: string; text?: string; url?: string } | null = null;
+    if (metaReq) {
+      try {
+        const metaRes = await cache.match(metaReq);
+        meta = metaRes ? await metaRes.json() : null;
+      } catch {
+        meta = null;
+      }
+    }
+
     const fileReqs = matching.filter((r) => !new URL(r.url).pathname.endsWith('/__meta__.json'));
     fileReqs.sort((a, b) => a.url.localeCompare(b.url)); // preserve share order via index prefix
 
@@ -92,6 +103,14 @@ async function drainSharedNonce(nonce: string): Promise<void> {
         ?? decodeURIComponent(new URL(req.url).pathname.split('/').pop()!.replace(/^\d+-/, ''));
       const file = new File([blob], fileName, { type: blob.type });
       deliver({ kind: 'file', file });
+    }
+
+    if (fileReqs.length === 0 && meta && (meta.title || meta.text || meta.url)) {
+      const pieces: string[] = [];
+      if (meta.title) pieces.push(meta.title);
+      if (meta.text) pieces.push(meta.text);
+      if (meta.url) pieces.push(meta.url);
+      deliver({ kind: 'text', text: pieces.join('\n\n'), title: meta.title, url: meta.url });
     }
 
     // Evict the bundle now that we've drained it
