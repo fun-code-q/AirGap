@@ -58,6 +58,9 @@ export interface ProcessedFile {
   seal: EncryptionKey;  // Key + IV (shared out-of-band via SEAL frame)
 }
 
+export const toExactArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
 /**
  * Compress → encrypt → Base45 encode.
  * The returned `seal` MUST be transmitted before any DATA frames.
@@ -204,7 +207,7 @@ export const reconstructFile = async (
   // 4. Inflate
   const plaintextBytes = fflate.unzlibSync(compressed);
 
-  return new Blob([plaintextBytes.buffer as ArrayBuffer], { type: mimeType });
+  return new Blob([toExactArrayBuffer(plaintextBytes)], { type: mimeType });
 };
 
 /**

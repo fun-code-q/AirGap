@@ -7,6 +7,7 @@ import {
   generateQRData,
   verifyChunkChecksum,
   verifyPayloadChecksum,
+  toExactArrayBuffer,
 } from '../utils/protocol';
 import base45 from '../utils/base45';
 import type { EncryptionKey } from '../utils/crypto';
@@ -68,6 +69,16 @@ describe('Protocol Utilities', () => {
       const payload = 'some-reassembled-payload';
       expect(verifyPayloadChecksum(payload, crc32(payload))).toBe(true);
       expect(verifyPayloadChecksum(payload + 'X', crc32(payload))).toBe(false);
+    });
+  });
+
+  describe('toExactArrayBuffer', () => {
+    it('copies only the visible bytes from a Uint8Array view', () => {
+      const source = new Uint8Array([9, 1, 2, 3, 9]);
+      const view = source.subarray(1, 4);
+      const exact = new Uint8Array(toExactArrayBuffer(view));
+
+      expect(exact).toEqual(new Uint8Array([1, 2, 3]));
     });
   });
 

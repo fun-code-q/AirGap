@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowLeft, CheckCircle, Download, FileAudio, FileImage, FileText, AlertCircle, Trash2, FileVideo, FileCode, QrCode, Copy, Check, FileSpreadsheet, FileBox, Zap, Shield, ShieldAlert, X, Palette } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Download, FileAudio, FileImage, FileText, AlertCircle, Trash2, FileVideo, FileCode, QrCode, Copy, Check, FileSpreadsheet, FileBox, Zap, Shield, ShieldAlert, X, Palette, Loader2 } from 'lucide-react';
 import ScannerCanvas from './ScannerCanvas';
-import { parseQRData, reconstructFile, verifyChunkChecksum, verifyPayloadChecksum, crc32 } from '../utils/protocol';
+import { parseQRData, reconstructFile, verifyChunkChecksum, verifyPayloadChecksum, crc32, toExactArrayBuffer } from '../utils/protocol';
 import { FountainDecoder } from '../utils/fountain';
 import { TransferState } from '../types';
 import base45 from '../utils/base45';
@@ -33,9 +33,21 @@ async function loadPdfJs(): Promise<PdfJsModule> {
 
 type MammothModule = typeof import('mammoth');
 let mammothPromise: Promise<MammothModule> | null = null;
+async function ensureBrowserBuffer(): Promise<void> {
+  const global = globalThis as typeof globalThis & { Buffer?: unknown };
+  if (!global.Buffer) {
+    const { Buffer } = await import('buffer');
+    global.Buffer = Buffer;
+  }
+}
+
 async function loadMammoth(): Promise<MammothModule> {
   if (!mammothPromise) {
-    mammothPromise = import('mammoth').then((m) => (m.default || m) as unknown as MammothModule);
+    mammothPromise = (async () => {
+      await ensureBrowserBuffer();
+      const m = await import('mammoth');
+      return (m.default || m) as unknown as MammothModule;
+    })();
   }
   return mammothPromise;
 }
@@ -54,6 +66,9 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
+  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [viewMode, setViewMode] = useState<'PREVIEW' | 'CODE'>('PREVIEW');
   const [pdfDoc, setPdfDoc] = useState<any>(null);
@@ -105,6 +120,7 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
 
       const blob = await reconstructFile(sortedData, mimeType, sealMaterial);
       const url = URL.createObjectURL(blob);
+      setResultBlob(blob);
       setTransfer(prev => ({ ...prev, resultUrl: url, isComplete: true }));
     } catch (e) {
       console.error('Reconstruction failed', e);
@@ -143,8 +159,9 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
       const compressed = await decryptData(cipher, tag, key, iv);
       const plaintext = fflate.unzlibSync(compressed);
 
-      const blob = new Blob([plaintext.buffer as ArrayBuffer], { type: mimeType });
+      const blob = new Blob([toExactArrayBuffer(plaintext)], { type: mimeType });
       const url = URL.createObjectURL(blob);
+      setResultBlob(blob);
       setTransfer(prev => ({ ...prev, resultUrl: url, isComplete: true, progress: 1 }));
     } catch (e) {
       console.error('Fountain reconstruction failed', e);
@@ -341,13 +358,14 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     fountainRef.current = null;
     seenFountainSeedsRef.current.clear();
     setFountainProgress({ known: 0, received: 0, k: 0 });
+    setResultBlob(null);
     setTransfer({
       transferId: null, header: null, totalChunks: null, receivedChunks: new Map(),
       sealMaterial: null, keyId: null,
       progress: 0, isComplete: false, resultUrl: null, corruptChunkCount: 0,
     });
-    setError(null); setPreviewText(null); setRenderedHtml(null); setCopyFeedback(false);
-    setViewMode('PREVIEW'); setPdfDoc(null); setPdfPageNum(1); setPdfTotalPages(0);
+    setError(null); setPreviewText(null); setRenderedHtml(null); setPreviewError(null); setPreviewLoading(false); setCopyFeedback(false);
+    setViewMode('PREVIEW'); setPdfDoc(null); setPdfPageNum(1); setPdfTotalPages(0); setPdfLoading(false);
   };
 
   useEffect(() => {
@@ -403,6 +421,19 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
     return transfer.header.mimeType.includes('html') || transfer.header.name.endsWith('.html');
   }, [transfer.header]);
 
+  const isPreviewableText = useMemo(() => {
+    if (!transfer.header) return false;
+    const { mimeType, name } = transfer.header;
+    return (
+      mimeType.startsWith('text/') ||
+      mimeType.includes('json') ||
+      mimeType.includes('xml') ||
+      mimeType.includes('javascript') ||
+      mimeType.includes('css') ||
+      /\.(txt|md|json|xml|html|css|js|ts|tsx|jsx|py|java|c|cpp|h|cs|php|rb|go|rs|swift|kt|csv)$/i.test(name)
+    );
+  }, [transfer.header]);
+
   const formattedCode = useMemo(() => {
     if (!previewText) return null;
     if (transfer.header?.mimeType.includes('json') || transfer.header?.name.endsWith('.json')) {
@@ -412,54 +443,114 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
   }, [previewText, transfer.header]);
 
   useEffect(() => {
-    if (!transfer.isComplete || !transfer.resultUrl || !transfer.header) return;
-    if ((transfer.header.mimeType.startsWith('text/') || transfer.header.mimeType.includes('json') || transfer.header.mimeType.includes('xml') || transfer.header.mimeType.includes('javascript') || transfer.header.mimeType.includes('css') || transfer.header.name.match(/\.(txt|md|json|xml|html|css|js|ts|tsx|jsx|py|java|c|cpp|h|cs|php|rb|go|rs|swift|kt|csv)$/i))) {
-      fetch(transfer.resultUrl).then(res => res.text()).then(text => setPreviewText(text.slice(0, 100000))).catch(err => console.error("Text preview failed", err));
+    if (!transfer.isComplete || !resultBlob || !transfer.header) return;
+
+    let cancelled = false;
+    setPreviewText(null);
+    setRenderedHtml(null);
+    setPdfDoc(null);
+    setPdfPageNum(1);
+    setPdfTotalPages(0);
+    setPreviewError(null);
+
+    const needsAsyncPreview = isPreviewableText || isDocx || isPdf;
+    if (!needsAsyncPreview) {
+      setPreviewLoading(false);
+      setPdfLoading(false);
+      return;
     }
-    if (isDocx) {
-      (async () => {
-        try {
-          const [mammoth, res] = await Promise.all([loadMammoth(), fetch(transfer.resultUrl!)]);
-          const buffer = await res.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-          setRenderedHtml(DOMPurify.sanitize(result.value));
-        } catch (err) {
-          console.error('Docx conversion failed', err);
-          setError('Could not render document.');
+
+    setPreviewLoading(true);
+    setPdfLoading(isPdf);
+
+    (async () => {
+      try {
+        if (isPreviewableText) {
+          const text = await resultBlob.text();
+          if (!cancelled) setPreviewText(text.slice(0, 100000));
+          return;
         }
-      })();
-    }
-    if (isPdf) {
-      setPdfLoading(true);
-      (async () => {
-        try {
-          const pdfjsLib = await loadPdfJs();
-          const pdf = await (pdfjsLib as any).getDocument(transfer.resultUrl).promise;
-          setPdfDoc(pdf);
-          setPdfTotalPages(pdf.numPages);
-        } catch (err) {
-          console.error(err);
-          setError('Could not load PDF.');
-        } finally {
+
+        if (isDocx) {
+          const [mammoth, buffer] = await Promise.all([loadMammoth(), resultBlob.arrayBuffer()]);
+          const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+          if (!cancelled) {
+            setRenderedHtml(DOMPurify.sanitize(result.value || '<p>No document text found.</p>'));
+          }
+          return;
+        }
+
+        if (isPdf) {
+          const [pdfjsLib, buffer] = await Promise.all([loadPdfJs(), resultBlob.arrayBuffer()]);
+          const pdf = await (pdfjsLib as any).getDocument({ data: new Uint8Array(buffer) }).promise;
+          if (!cancelled) {
+            setPdfDoc(pdf);
+            setPdfTotalPages(pdf.numPages);
+          }
+        }
+      } catch (err) {
+        console.error('Preview failed', err);
+        if (!cancelled) {
+          const message = isPdf ? 'Could not load PDF preview.' : isDocx ? 'Could not render document preview.' : 'Could not load text preview.';
+          setPreviewError(message);
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setPreviewLoading(false);
           setPdfLoading(false);
         }
-      })();
-    }
-  }, [transfer.isComplete, transfer.resultUrl, transfer.header, isDocx, isPdf]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [transfer.isComplete, resultBlob, transfer.header, isPreviewableText, isDocx, isPdf]);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
+    let cancelled = false;
+    setPdfLoading(true);
+
     pdfDoc.getPage(pdfPageNum).then((page: any) => {
-      const viewport = page.getViewport({ scale: 1.5 });
+      if (cancelled || !canvasRef.current) return null;
+      const baseViewport = page.getViewport({ scale: 1 });
+      const parentWidth = canvasRef.current.parentElement?.clientWidth ?? baseViewport.width;
+      const scale = Math.min(1.5, Math.max(0.6, (parentWidth - 32) / baseViewport.width));
+      const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current!;
       const context = canvas.getContext('2d');
       if (context) {
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-        page.render({ canvasContext: context, viewport: viewport });
+        return page.render({ canvasContext: context, viewport: viewport }).promise;
       }
+      return null;
+    }).catch((err: unknown) => {
+      console.error('PDF render failed', err);
+      if (!cancelled) {
+        setPreviewError('Could not render PDF page.');
+      }
+    }).finally(() => {
+      if (!cancelled) setPdfLoading(false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [pdfDoc, pdfPageNum]);
+
+  const previewState = (message: string, loading = false) => (
+    <div className="min-h-full flex flex-col items-center justify-center gap-3 px-6 py-16 md:py-24 text-center text-slate-500">
+      {loading ? (
+        <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+      ) : (
+        <FileBox className="w-14 h-14 md:w-16 md:h-16 opacity-20" />
+      )}
+      <p className="text-[10px] md:text-xs uppercase tracking-widest">{message}</p>
+    </div>
+  );
 
   return (
     <div className="flex flex-col min-h-[100dvh] bg-[#020617] text-slate-100 overflow-hidden relative">
@@ -533,28 +624,48 @@ const Receiver: React.FC<ReceiverProps> = ({ onBack }) => {
                         <audio src={transfer.resultUrl!} controls className="w-full max-w-md" />
                       </div>
                     ) : isPdf ? (
-                      <div className="p-4 flex justify-center">
-                        <canvas ref={canvasRef} className="max-w-full mx-auto shadow-2xl bg-white rounded-lg" />
+                      <div className="relative min-h-full p-4 flex justify-center">
+                        {previewError && !pdfDoc ? (
+                          previewState(previewError)
+                        ) : (
+                          <>
+                            {(previewLoading || pdfLoading || !pdfDoc) && (
+                              <div className="absolute inset-0 z-10 bg-slate-950/70 backdrop-blur-sm">
+                                {previewState('Loading PDF preview', true)}
+                              </div>
+                            )}
+                            <canvas ref={canvasRef} className="max-w-full mx-auto shadow-2xl bg-white rounded-lg" />
+                          </>
+                        )}
                       </div>
                     ) : isDocx ? (
-                      <div
-                        className="bg-white text-slate-900 p-6 md:p-8 min-h-full prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: renderedHtml || '' }}
-                      />
-                    ) : isHtml || isCode || previewText ? (
-                      <div className="p-4 md:p-6 font-mono text-xs md:text-sm text-cyan-100/80 leading-relaxed whitespace-pre-wrap break-all relative">
-                        <div className="absolute top-3 right-3 flex gap-2 z-10">
-                          <button onClick={handleCopyCode} aria-label="Copy" className="btn-icon glass">
-                            {copyFeedback ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
-                          </button>
+                      previewError ? (
+                        previewState(previewError)
+                      ) : renderedHtml !== null ? (
+                        <div
+                          className="bg-white text-slate-900 p-6 md:p-8 min-h-full prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+                        />
+                      ) : (
+                        previewState('Rendering document preview', true)
+                      )
+                    ) : isPreviewableText ? (
+                      previewError ? (
+                        previewState(previewError)
+                      ) : previewText !== null ? (
+                        <div className="p-4 md:p-6 font-mono text-xs md:text-sm text-cyan-100/80 leading-relaxed whitespace-pre-wrap break-all relative">
+                          <div className="absolute top-3 right-3 flex gap-2 z-10">
+                            <button onClick={handleCopyCode} aria-label="Copy" className="btn-icon glass">
+                              {copyFeedback ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
+                            </button>
+                          </div>
+                          <code>{isCode ? formattedCode : previewText}</code>
                         </div>
-                        <code>{isCode ? formattedCode : previewText}</code>
-                      </div>
+                      ) : (
+                        previewState('Loading text preview', true)
+                      )
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-16 md:py-24 text-slate-600">
-                        <FileBox className="w-14 h-14 md:w-16 md:h-16 mb-4 opacity-20" />
-                        <p className="text-[10px] md:text-xs uppercase tracking-widest">No visual preview available</p>
-                      </div>
+                      previewState('No visual preview available')
                     )}
                   </div>
                 </div>
